@@ -18,9 +18,13 @@ include <uapi/linux/raid/md_p.h>
 # are never freed in the default legacy_async_del_gendisk mode).
 # The sysfs/new_array fds are not fd subtypes, so that generic write() can't be used
 # to write arbitrary values (e.g. the root disk device number to md/new_dev).
-resource fd_md_new_array[int32]: -1
-resource fd_md[fd_block]
+# 声明一个 int32 类型的资源，特殊返回值为 -1
+resource fd_md_new_array[int32]: -1 
+# fd_block 是块设备描述符
+resource fd_md[fd_block] 
 
+# openat 实际调用的系统调用, md_new_array 是变体在 syzlang 中的名字
+# AT_FDCWD 当前工作目录
 openat$md_new_array(fd const[AT_FDCWD], file ptr[in, string["/sys/module/md_mod/parameters/new_array"]], flags const[O_WRONLY], mode const[0]) fd_md_new_array
 write$md_new_array(fd fd_md_new_array, buf ptr[in, md_array_name], len bytesize[buf]) (no_squash)
 
@@ -68,17 +72,18 @@ md_dev_node {
 # IMPORTANT: member disks must never reference the VM root disk (sda, virtio, etc),
 # because md writes superblocks to member devices. So only brd ramdisks
 # (RAMDISK_MAJOR, CONFIG_BLK_DEV_RAM) are used, with per-proc minor numbers
-# (2 ramdisks per proc); the major number is also enforced in neutralize.
+# (4 ramdisks per proc); the major number is also enforced in neutralize.
 # Loop devices are not used: /dev/loop<proc> belongs to the executor (syz_mount_image).
+# diff: 这里把两盘改成了四盘, 为了适配 raid 6, 并且提高普遍性
 md_member_dev {
 	major	const[RAMDISK_MAJOR, int32]
-	minor	proc[0, 2, int32]
+	minor	proc[0, 4, int32]
 }
 
 # Encoded dev_t (new_encode_dev(), i.e. major << 8 | minor for small numbers)
 # passed as the ioctl argument of HOT_ADD_DISK, HOT_REMOVE_DISK, SET_DISK_FAULTY.
 define RAM_DEVT_BASE	(RAMDISK_MAJOR << 8)
-type md_ram_devt proc[RAM_DEVT_BASE, 2, intptr]
+type md_ram_devt proc[RAM_DEVT_BASE, 4, intptr]
 
 # Status ioctls.
 ioctl$RAID_VERSION(fd fd_md, cmd const[RAID_VERSION], arg ptr[out, mdu_version_t])
@@ -120,7 +125,7 @@ mdu_array_info_t {
 # Component size in KiB (ramdisks are 4 MiB).
 	size		int32[0:4096]
 	nr_disks	const[0, int32]
-# Each proc has only 2 member disks, so larger arrays can only run degraded (or not at all).
+# Each proc has only 4 member disks, so larger arrays can only run degraded (or not at all).
 	raid_disks	int32[0:4]
 	md_minor	const[0, int32]
 	not_persistent	bool32
@@ -222,7 +227,7 @@ md_sysfs_rdev_dir [
 # NEED: this does not support formatting numbers larger than 9.
 md_sysfs_rdev_dir_ram {
 	prefix	stringnoz["dev-ram"]
-	id	proc['0', 2, int8]
+	id	proc['0', 4, int8]
 	slash	const['/', int8]
 } [packed]
 
@@ -241,9 +246,10 @@ md_sysfs_val [
 ] [varlen]
 
 # "major:minor" for new_dev. As above, only ramdisks (1 is RAMDISK_MAJOR).
+# diff: 2 -> 4
 md_sysfs_new_dev {
 	major	stringnoz["1:"]
-	minor	fmt[dec, proc[0, 2]]
+	minor	fmt[dec, proc[0, 4]]
 } [packed]
 
 # "sector length" for bad_blocks and unacknowledged_bad_blocks.
