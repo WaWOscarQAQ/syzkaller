@@ -144,20 +144,50 @@ func readInputs(cfg *mgrconfig.Config, db *db.DB, output chan *input) error {
 	seedPath := filepath.Join("sys", cfg.TargetOS, "test")
 	seedDir := filepath.Join(cfg.Syzkaller, seedPath)
 	if osutil.IsExist(seedDir) {
-		seeds, err := os.ReadDir(seedDir)
-		if err != nil {
-			return fmt.Errorf("failed to read seeds dir: %w", err)
+		if err := readSeedInputs(cfg, seedDir, seedPath, inputs); err != nil {
+			return err
 		}
-		for _, seed := range seeds {
-			data, err := os.ReadFile(filepath.Join(seedDir, seed.Name()))
-			if err != nil {
-				return fmt.Errorf("failed to read seed %v: %w", seed.Name(), err)
+	} else if len(cfg.SeedFiles) != 0 {
+		return fmt.Errorf("failed to read seeds dir %v: directory does not exist", seedDir)
+	}
+	return nil
+}
+
+func readSeedInputs(cfg *mgrconfig.Config, seedDir, seedPath string, output chan<- *input) error {
+	var selected map[string]bool
+	if cfg.SeedFiles != nil {
+		selected = make(map[string]bool, len(cfg.SeedFiles))
+		for _, name := range cfg.SeedFiles {
+			if name == "" || name == "." || name == ".." ||
+				filepath.IsAbs(name) || filepath.Base(name) != name {
+				return fmt.Errorf("bad config param seed_files: %q is not a file name", name)
 			}
-			inputs <- &input{
-				IsSeed: true,
-				Path:   filepath.Join(seedPath, seed.Name()),
-				Data:   data,
-			}
+			selected[name] = true
+		}
+	}
+	seeds, err := os.ReadDir(seedDir)
+	if err != nil {
+		return fmt.Errorf("failed to read seeds dir: %w", err)
+	}
+	found := make(map[string]bool, len(selected))
+	for _, seed := range seeds {
+		if selected != nil && !selected[seed.Name()] {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(seedDir, seed.Name()))
+		if err != nil {
+			return fmt.Errorf("failed to read seed %v: %w", seed.Name(), err)
+		}
+		found[seed.Name()] = true
+		output <- &input{
+			IsSeed: true,
+			Path:   filepath.Join(seedPath, seed.Name()),
+			Data:   data,
+		}
+	}
+	for _, name := range cfg.SeedFiles {
+		if !found[name] {
+			return fmt.Errorf("bad config param seed_files: seed %q does not exist in %v", name, seedDir)
 		}
 	}
 	return nil

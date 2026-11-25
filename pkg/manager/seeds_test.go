@@ -4,10 +4,53 @@
 package manager
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/google/syzkaller/pkg/mgrconfig"
 	"github.com/stretchr/testify/require"
 )
+
+func TestReadSeedInputs(t *testing.T) {
+	seedDir := t.TempDir()
+	for _, name := range []string{"first", "second"} {
+		require.NoError(t, os.WriteFile(filepath.Join(seedDir, name), []byte(name), 0o600))
+	}
+	tests := []struct {
+		name      string
+		seedFiles []string
+		want      []string
+		wantErr   string
+	}{
+		{name: "all seeds", want: []string{"first", "second"}},
+		{name: "no seeds", seedFiles: []string{}},
+		{name: "selected seed", seedFiles: []string{"second"}, want: []string{"second"}},
+		{name: "missing seed", seedFiles: []string{"missing"}, wantErr: `seed "missing" does not exist`},
+		{name: "path instead of name", seedFiles: []string{"../first"}, wantErr: "is not a file name"},
+		{name: "absolute path", seedFiles: []string{"/first"}, wantErr: "is not a file name"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			output := make(chan *input, 2)
+			err := readSeedInputs(&mgrconfig.Config{SeedFiles: tc.seedFiles},
+				seedDir, filepath.Join("sys", "test"), output)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			close(output)
+			var got []string
+			for inp := range output {
+				require.True(t, inp.IsSeed)
+				require.Equal(t, filepath.Base(inp.Path), string(inp.Data))
+				got = append(got, filepath.Base(inp.Path))
+			}
+			require.ElementsMatch(t, tc.want, got)
+		})
+	}
+}
 
 func TestRequires(t *testing.T) {
 	{

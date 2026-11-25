@@ -13,6 +13,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSeedFiles(t *testing.T) {
+	cfg, err := LoadPartialData([]byte(`{
+		"target": "linux/amd64",
+		"seed_files": ["md_raid5_normal", "md_raid5_reshape_grow"]
+	}`))
+	require.NoError(t, err)
+	require.Equal(t, []string{"md_raid5_normal", "md_raid5_reshape_grow"}, cfg.SeedFiles)
+
+	cfg, err = LoadPartialData([]byte(`{"target": "linux/amd64", "seed_files": []}`))
+	require.NoError(t, err)
+	require.NotNil(t, cfg.SeedFiles)
+	require.Empty(t, cfg.SeedFiles)
+}
+
 func TestParseEnabledSyscalls(t *testing.T) {
 	target, err := prog.GetTarget(targets.TestOS, targets.TestArch64)
 	require.NoError(t, err)

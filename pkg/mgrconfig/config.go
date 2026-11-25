@@ -179,6 +179,10 @@ type Config struct {
 	// locally.
 	PreserveCorpus bool `json:"preserve_corpus"`
 
+	// Static seed files to load from sys/<target_os>/test. If unset, load all files.
+	// An explicitly empty list disables static seeds.
+	SeedFiles []string `json:"seed_files,omitempty"`
+
 	// List of syscalls to test (optional). For example:
 	//	"enable_syscalls": [ "mmap", "openat$ashmem", "ioctl$ASHMEM*" ]
 	EnabledSyscalls []string `json:"enable_syscalls,omitempty"`
